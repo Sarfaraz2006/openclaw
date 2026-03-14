@@ -9,10 +9,13 @@ import ai.openclaw.android.node.CanvasController
 import ai.openclaw.android.node.ScreenRecordManager
 import ai.openclaw.android.node.SmsManager
 import ai.openclaw.android.voice.VoiceConversationEntry
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
   private val runtime: NodeRuntime = (app as NodeApp).runtime
+
+  private val runtimeServiceRunningState = MutableStateFlow(NodeForegroundService.isRunning())
 
   val canvas: CanvasController = runtime.canvas
   val canvasCurrentUrl: StateFlow<String?> = runtime.canvas.currentUrl
@@ -62,6 +65,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   val manualTls: StateFlow<Boolean> = runtime.manualTls
   val gatewayToken: StateFlow<String> = runtime.gatewayToken
   val onboardingCompleted: StateFlow<Boolean> = runtime.onboardingCompleted
+  val runtimeServiceRunning: StateFlow<Boolean> = runtimeServiceRunningState
   val canvasDebugStatusEnabled: StateFlow<Boolean> = runtime.canvasDebugStatusEnabled
 
   val chatSessionKey: StateFlow<String> = runtime.chatSessionKey
@@ -157,6 +161,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   fun disconnect() {
     runtime.disconnect()
+  }
+
+  fun startRuntimeService() {
+    NodeForegroundService.start(getApplication())
+    runtimeServiceRunningState.value = true
+  }
+
+  fun stopRuntimeService() {
+    NodeForegroundService.stop(getApplication())
+    runtimeServiceRunningState.value = false
+  }
+
+  fun refreshRuntimeServiceState() {
+    runtimeServiceRunningState.value = NodeForegroundService.isRunning()
   }
 
   fun acceptGatewayTrustPrompt() {

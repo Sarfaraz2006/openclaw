@@ -65,6 +65,7 @@ fun ConnectTabScreen(viewModel: MainViewModel) {
   val gatewayToken by viewModel.gatewayToken.collectAsState()
   val pendingTrust by viewModel.pendingGatewayTrust.collectAsState()
   val runtimeEnabled by viewModel.runtimeServiceRunning.collectAsState()
+  val runtimeAutoStopAtMs by viewModel.runtimeAutoStopAtMs.collectAsState()
 
   var advancedOpen by rememberSaveable { mutableStateOf(false) }
   var inputMode by
@@ -175,6 +176,11 @@ fun ConnectTabScreen(viewModel: MainViewModel) {
           style = mobileBody,
           color = mobileText,
         )
+        if (runtimeAutoStopAtMs != null) {
+          val remainingMs = (runtimeAutoStopAtMs!! - System.currentTimeMillis()).coerceAtLeast(0L)
+          val remainingMin = (remainingMs + 59_999L) / 60_000L
+          Text("Auto-stop in ${remainingMin} min", style = mobileCaption1, color = mobileTextSecondary)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Button(
             onClick = {
@@ -185,6 +191,15 @@ fun ConnectTabScreen(viewModel: MainViewModel) {
             shape = RoundedCornerShape(10.dp),
           ) {
             Text("Start runtime", style = mobileCallout.copy(fontWeight = FontWeight.SemiBold))
+          }
+          Button(
+            onClick = {
+              viewModel.startRuntimeServiceForMinutes(30)
+            },
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(10.dp),
+          ) {
+            Text("Run 30 min", style = mobileCallout.copy(fontWeight = FontWeight.SemiBold))
           }
           Button(
             onClick = {

@@ -28,6 +28,7 @@ class NodeForegroundService : Service() {
 
   override fun onCreate() {
     super.onCreate()
+    running = true
     ensureChannel()
     val initial = buildNotification(title = "OpenClaw Node", text = "Starting…")
     startForegroundWithTypes(notification = initial, requiresMic = false)
@@ -76,6 +77,7 @@ class NodeForegroundService : Service() {
   }
 
   override fun onDestroy() {
+    running = false
     notificationJob?.cancel()
     scope.cancel()
     super.onDestroy()
@@ -164,6 +166,10 @@ class NodeForegroundService : Service() {
     private const val NOTIFICATION_ID = 1
 
     private const val ACTION_STOP = "ai.openclaw.android.action.STOP"
+
+    @Volatile private var running: Boolean = false
+
+    fun isRunning(): Boolean = running
 
     fun start(context: Context) {
       val intent = Intent(context, NodeForegroundService::class.java)

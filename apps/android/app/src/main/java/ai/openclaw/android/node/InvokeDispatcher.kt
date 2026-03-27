@@ -55,17 +55,20 @@ class InvokeDispatcher(
       )
     }
     availabilityError(spec.availability)?.let { return it }
+    destructiveConfirmationError(command = command, paramsJson = paramsJson)?.let { return it }
 
     return when (command) {
       // Canvas commands
       OpenClawCanvasCommand.Present.rawValue -> {
         val url = CanvasController.parseNavigateUrl(paramsJson)
+        linkSafetyError(url = url, paramsJson = paramsJson)?.let { return it }
         canvas.navigate(url)
         GatewaySession.InvokeResult.ok(null)
       }
       OpenClawCanvasCommand.Hide.rawValue -> GatewaySession.InvokeResult.ok(null)
       OpenClawCanvasCommand.Navigate.rawValue -> {
         val url = CanvasController.parseNavigateUrl(paramsJson)
+        linkSafetyError(url = url, paramsJson = paramsJson)?.let { return it }
         canvas.navigate(url)
         GatewaySession.InvokeResult.ok(null)
       }
@@ -175,6 +178,38 @@ class InvokeDispatcher(
       "app.update" -> appUpdateHandler.handleUpdate(paramsJson)
 
       else -> GatewaySession.InvokeResult.error(code = "INVALID_REQUEST", message = "INVALID_REQUEST: unknown command")
+    }
+  }
+
+
+  private fun destructiveConfirmationError(command: String, paramsJson: String?): GatewaySession.InvokeResult? {
+    if (!CommandSafetyPolicy.needsDestructiveConfirmation(command = command, paramsJson = paramsJson)) {
+      return null
+    }
+    return GatewaySession.InvokeResult.error(
+      code = "CONFIRMATION_REQUIRED",
+      message = "CONFIRMATION_REQUIRED: set confirm=true for destructive action '$command'",
+    )
+  }
+
+  private fun linkSafetyError(url: String, paramsJson: String?): GatewaySession.InvokeResult? {
+    return when (val decision = CommandSafetyPolicy.classifyLink(url)) {
+      LinkSafetyDecision.Allow -> null
+      is LinkSafetyDecision.Blocked ->
+        GatewaySession.InvokeResult.error(
+          code = "LINK_BLOCKED",
+          message = "LINK_BLOCKED: ${decision.reason}",
+        )
+      is LinkSafetyDecision.RequiresConfirmation ->
+        if (CommandSafetyPolicy.isExplicitConfirm(paramsJson)) {
+          null
+        } else {
+          GatewaySession.InvokeResult.error(
+            code = "CONFIRMATION_REQUIRED",
+            message =
+              "CONFIRMATION_REQUIRED: link requires confirm=true (${decision.reason})",
+          )
+        }
     }
   }
 

@@ -837,6 +837,7 @@ class NodeRuntime(context: Context) {
   fun disconnect() {
     connectedEndpoint = null
     _pendingGatewayTrust.value = null
+    resolveActionConfirmationPrompt(approved = false)
     operatorSession.disconnect()
     nodeSession.disconnect()
   }

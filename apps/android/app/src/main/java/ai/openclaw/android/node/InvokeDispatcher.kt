@@ -62,14 +62,14 @@ class InvokeDispatcher(
       // Canvas commands
       OpenClawCanvasCommand.Present.rawValue -> {
         val url = CanvasController.parseNavigateUrl(paramsJson)
-        linkSafetyError(url = url, paramsJson = paramsJson)?.let { return it }
+        linkSafetyError(command = command, url = url, paramsJson = paramsJson)?.let { return it }
         canvas.navigate(url)
         GatewaySession.InvokeResult.ok(null)
       }
       OpenClawCanvasCommand.Hide.rawValue -> GatewaySession.InvokeResult.ok(null)
       OpenClawCanvasCommand.Navigate.rawValue -> {
         val url = CanvasController.parseNavigateUrl(paramsJson)
-        linkSafetyError(url = url, paramsJson = paramsJson)?.let { return it }
+        linkSafetyError(command = command, url = url, paramsJson = paramsJson)?.let { return it }
         canvas.navigate(url)
         GatewaySession.InvokeResult.ok(null)
       }
@@ -204,7 +204,7 @@ class InvokeDispatcher(
     )
   }
 
-  private suspend fun linkSafetyError(url: String, paramsJson: String?): GatewaySession.InvokeResult? {
+  private suspend fun linkSafetyError(command: String, url: String, paramsJson: String?): GatewaySession.InvokeResult? {
     return when (val decision = CommandSafetyPolicy.classifyLink(url)) {
       LinkSafetyDecision.Allow -> null
       is LinkSafetyDecision.Blocked ->
@@ -219,7 +219,7 @@ class InvokeDispatcher(
           val approved =
             requestActionConfirmation(
               ActionConfirmationRequest(
-                command = "canvas.navigate",
+                command = command,
                 reason = decision.reason,
                 riskLevel = ActionRiskLevel.RiskyLink,
               ),

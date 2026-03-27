@@ -39,4 +39,15 @@ class CommandSafetyPolicyTest {
     val decision = CommandSafetyPolicy.classifyLink("https://10.0.2.2/ui")
     assertTrue(decision is LinkSafetyDecision.RequiresConfirmation)
   }
+
+  @Test
+  fun `malformed confirm payload is treated as unconfirmed`() {
+    assertTrue(CommandSafetyPolicy.needsDestructiveConfirmation("sms.send", "{not-json"))
+  }
+
+  @Test
+  fun `confirm flag parser handles missing payload`() {
+    assertFalse(CommandSafetyPolicy.isExplicitConfirm(null))
+    assertFalse(CommandSafetyPolicy.isExplicitConfirm(""))
+  }
 }

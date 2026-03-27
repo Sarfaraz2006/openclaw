@@ -33,8 +33,10 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -47,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import ai.openclaw.android.MainViewModel
+import kotlinx.coroutines.delay
 
 private enum class ConnectInputMode {
   SetupCode,
@@ -84,6 +87,17 @@ fun ConnectTabScreen(viewModel: MainViewModel) {
   var manualTlsInput by rememberSaveable { mutableStateOf(manualTls) }
   var passwordInput by rememberSaveable { mutableStateOf("") }
   var validationText by rememberSaveable { mutableStateOf<String?>(null) }
+
+  // Ticking clock for live countdown display (updates every second while a stop time is set)
+  var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+  LaunchedEffect(runtimeAutoStopAtMs) {
+    if (runtimeAutoStopAtMs != null) {
+      while (nowMs < runtimeAutoStopAtMs) {
+        nowMs = System.currentTimeMillis()
+        delay(1_000L)
+      }
+    }
+  }
 
   if (pendingTrust != null) {
     val prompt = pendingTrust!!
@@ -177,7 +191,7 @@ fun ConnectTabScreen(viewModel: MainViewModel) {
           color = mobileText,
         )
         if (runtimeAutoStopAtMs != null) {
-          val remainingMs = (runtimeAutoStopAtMs!! - System.currentTimeMillis()).coerceAtLeast(0L)
+          val remainingMs = (runtimeAutoStopAtMs!! - nowMs).coerceAtLeast(0L)
           val remainingMin = (remainingMs + 59_999L) / 60_000L
           Text("Auto-stop in ${remainingMin} min", style = mobileCaption1, color = mobileTextSecondary)
         }

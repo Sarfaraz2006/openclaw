@@ -40,6 +40,7 @@ class InvokeDispatcher(
   private val onCanvasA2uiReset: () -> Unit,
   private val motionActivityAvailable: () -> Boolean,
   private val motionPedometerAvailable: () -> Boolean,
+  private val requestActionConfirmation: suspend (ActionConfirmationRequest) -> Boolean,
 ) {
   suspend fun handleInvoke(command: String, paramsJson: String?): GatewaySession.InvokeResult {
     val spec =
@@ -55,17 +56,20 @@ class InvokeDispatcher(
       )
     }
     availabilityError(spec.availability)?.let { return it }
+    destructiveConfirmationError(command = command, paramsJson = paramsJson)?.let { return it }
 
     return when (command) {
       // Canvas commands
       OpenClawCanvasCommand.Present.rawValue -> {
         val url = CanvasController.parseNavigateUrl(paramsJson)
+        linkSafetyError(url = url, paramsJson = paramsJson)?.let { return it }
         canvas.navigate(url)
         GatewaySession.InvokeResult.ok(null)
       }
       OpenClawCanvasCommand.Hide.rawValue -> GatewaySession.InvokeResult.ok(null)
       OpenClawCanvasCommand.Navigate.rawValue -> {
         val url = CanvasController.parseNavigateUrl(paramsJson)
+        linkSafetyError(url = url, paramsJson = paramsJson)?.let { return it }
         canvas.navigate(url)
         GatewaySession.InvokeResult.ok(null)
       }
@@ -175,6 +179,61 @@ class InvokeDispatcher(
       "app.update" -> appUpdateHandler.handleUpdate(paramsJson)
 
       else -> GatewaySession.InvokeResult.error(code = "INVALID_REQUEST", message = "INVALID_REQUEST: unknown command")
+    }
+  }
+
+
+  private suspend fun destructiveConfirmationError(command: String, paramsJson: String?): GatewaySession.InvokeResult? {
+    if (!CommandSafetyPolicy.needsDestructiveConfirmation(command = command, paramsJson = paramsJson)) {
+      return null
+    }
+    val approved =
+      requestActionConfirmation(
+        ActionConfirmationRequest(
+          command = command,
+          reason = "Destructive action requires explicit approval.",
+          riskLevel = ActionRiskLevel.Destructive,
+        ),
+      )
+    if (approved) {
+      return null
+    }
+    return GatewaySession.InvokeResult.error(
+      code = "CONFIRMATION_REQUIRED",
+      message = "CONFIRMATION_REQUIRED: destructive action denied by user",
+    )
+  }
+
+  private suspend fun linkSafetyError(url: String, paramsJson: String?): GatewaySession.InvokeResult? {
+    return when (val decision = CommandSafetyPolicy.classifyLink(url)) {
+      LinkSafetyDecision.Allow -> null
+      is LinkSafetyDecision.Blocked ->
+        GatewaySession.InvokeResult.error(
+          code = "LINK_BLOCKED",
+          message = "LINK_BLOCKED: ${decision.reason}",
+        )
+      is LinkSafetyDecision.RequiresConfirmation -> {
+        if (CommandSafetyPolicy.isExplicitConfirm(paramsJson)) {
+          null
+        } else {
+          val approved =
+            requestActionConfirmation(
+              ActionConfirmationRequest(
+                command = "canvas.navigate",
+                reason = decision.reason,
+                riskLevel = ActionRiskLevel.RiskyLink,
+              ),
+            )
+          if (approved) {
+            null
+          } else {
+            GatewaySession.InvokeResult.error(
+              code = "CONFIRMATION_REQUIRED",
+              message = "CONFIRMATION_REQUIRED: risky link denied by user",
+            )
+          }
+        }
+      }
     }
   }
 

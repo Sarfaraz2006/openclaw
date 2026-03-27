@@ -26,7 +26,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -178,11 +180,20 @@ class NodeRuntime(context: Context) {
     onCanvasA2uiReset = { _canvasA2uiHydrated.value = false },
     motionActivityAvailable = { motionHandler.isActivityAvailable() },
     motionPedometerAvailable = { motionHandler.isPedometerAvailable() },
+    requestActionConfirmation = ::requestActionConfirmation,
   )
 
   data class GatewayTrustPrompt(
     val endpoint: GatewayEndpoint,
     val fingerprintSha256: String,
+  )
+
+  data class ActionConfirmationPrompt(
+    val id: Long,
+    val command: String,
+    val title: String,
+    val message: String,
+    val riskLevel: ActionRiskLevel,
   )
 
   private val _isConnected = MutableStateFlow(false)
@@ -195,11 +206,15 @@ class NodeRuntime(context: Context) {
 
   private val _pendingGatewayTrust = MutableStateFlow<GatewayTrustPrompt?>(null)
   val pendingGatewayTrust: StateFlow<GatewayTrustPrompt?> = _pendingGatewayTrust.asStateFlow()
+  private val _pendingActionConfirmation = MutableStateFlow<ActionConfirmationPrompt?>(null)
+  val pendingActionConfirmation: StateFlow<ActionConfirmationPrompt?> = _pendingActionConfirmation.asStateFlow()
 
   private val _mainSessionKey = MutableStateFlow("main")
   val mainSessionKey: StateFlow<String> = _mainSessionKey.asStateFlow()
 
   private val cameraHudSeq = AtomicLong(0)
+  private val actionConfirmationSeq = AtomicLong(0)
+  private var pendingActionConfirmationDecision: CompletableDeferred<Boolean>? = null
   private val _cameraHud = MutableStateFlow<CameraHudState?>(null)
   val cameraHud: StateFlow<CameraHudState?> = _cameraHud.asStateFlow()
 
@@ -752,6 +767,54 @@ class NodeRuntime(context: Context) {
   fun declineGatewayTrustPrompt() {
     _pendingGatewayTrust.value = null
     _statusText.value = "Offline"
+  }
+
+  fun acceptActionConfirmationPrompt() {
+    resolveActionConfirmationPrompt(approved = true)
+  }
+
+  fun declineActionConfirmationPrompt() {
+    resolveActionConfirmationPrompt(approved = false)
+  }
+
+  private suspend fun requestActionConfirmation(request: ActionConfirmationRequest): Boolean {
+    if (!_isForeground.value) {
+      return false
+    }
+
+    pendingActionConfirmationDecision?.complete(false)
+
+    val deferred = CompletableDeferred<Boolean>()
+    pendingActionConfirmationDecision = deferred
+    val promptId = actionConfirmationSeq.incrementAndGet()
+    val title =
+      when (request.riskLevel) {
+        ActionRiskLevel.Destructive -> "Confirm destructive action"
+        ActionRiskLevel.RiskyLink -> "Confirm risky link"
+      }
+    _pendingActionConfirmation.value =
+      ActionConfirmationPrompt(
+        id = promptId,
+        command = request.command,
+        title = title,
+        message = request.reason,
+        riskLevel = request.riskLevel,
+      )
+
+    val approved = withTimeoutOrNull(30_000L) { deferred.await() } ?: false
+    if (_pendingActionConfirmation.value?.id == promptId) {
+      _pendingActionConfirmation.value = null
+    }
+    if (pendingActionConfirmationDecision === deferred) {
+      pendingActionConfirmationDecision = null
+    }
+    return approved
+  }
+
+  private fun resolveActionConfirmationPrompt(approved: Boolean) {
+    pendingActionConfirmationDecision?.complete(approved)
+    pendingActionConfirmationDecision = null
+    _pendingActionConfirmation.value = null
   }
 
   private fun hasRecordAudioPermission(): Boolean {

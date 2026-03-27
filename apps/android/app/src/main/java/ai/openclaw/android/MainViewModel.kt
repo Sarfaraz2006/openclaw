@@ -2,6 +2,7 @@ package ai.openclaw.android
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import ai.openclaw.android.gateway.GatewayEndpoint
 import ai.openclaw.android.chat.OutgoingAttachment
 import ai.openclaw.android.node.CameraCaptureManager
@@ -9,10 +10,18 @@ import ai.openclaw.android.node.CanvasController
 import ai.openclaw.android.node.ScreenRecordManager
 import ai.openclaw.android.node.SmsManager
 import ai.openclaw.android.voice.VoiceConversationEntry
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
   private val runtime: NodeRuntime = (app as NodeApp).runtime
+
+  private val runtimeServiceRunningState = MutableStateFlow(NodeForegroundService.isRunning())
+  private val runtimeAutoStopAtMsState = MutableStateFlow<Long?>(null)
+  private var runtimeAutoStopJob: Job? = null
 
   val canvas: CanvasController = runtime.canvas
   val canvasCurrentUrl: StateFlow<String?> = runtime.canvas.currentUrl
@@ -32,6 +41,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   val serverName: StateFlow<String?> = runtime.serverName
   val remoteAddress: StateFlow<String?> = runtime.remoteAddress
   val pendingGatewayTrust: StateFlow<NodeRuntime.GatewayTrustPrompt?> = runtime.pendingGatewayTrust
+  val pendingActionConfirmation: StateFlow<NodeRuntime.ActionConfirmationPrompt?> = runtime.pendingActionConfirmation
   val isForeground: StateFlow<Boolean> = runtime.isForeground
   val seamColorArgb: StateFlow<Long> = runtime.seamColorArgb
   val mainSessionKey: StateFlow<String> = runtime.mainSessionKey
@@ -62,6 +72,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
   val manualTls: StateFlow<Boolean> = runtime.manualTls
   val gatewayToken: StateFlow<String> = runtime.gatewayToken
   val onboardingCompleted: StateFlow<Boolean> = runtime.onboardingCompleted
+  val runtimeServiceRunning: StateFlow<Boolean> = runtimeServiceRunningState
+  val runtimeAutoStopAtMs: StateFlow<Long?> = runtimeAutoStopAtMsState
   val canvasDebugStatusEnabled: StateFlow<Boolean> = runtime.canvasDebugStatusEnabled
 
   val chatSessionKey: StateFlow<String> = runtime.chatSessionKey
@@ -159,12 +171,61 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     runtime.disconnect()
   }
 
+  fun startRuntimeService() {
+    NodeForegroundService.start(getApplication())
+    runtimeServiceRunningState.value = true
+    clearRuntimeAutoStop()
+  }
+
+  fun startRuntimeServiceForMinutes(minutes: Int) {
+    val durationMs = (minutes.coerceAtLeast(1) * 60_000L)
+    NodeForegroundService.start(getApplication())
+    runtimeServiceRunningState.value = true
+    val stopAt = System.currentTimeMillis() + durationMs
+    runtimeAutoStopAtMsState.value = stopAt
+    runtimeAutoStopJob?.cancel()
+    runtimeAutoStopJob =
+      viewModelScope.launch {
+        delay(durationMs)
+        NodeForegroundService.stop(getApplication())
+        runtimeServiceRunningState.value = false
+        runtimeAutoStopAtMsState.value = null
+      }
+  }
+
+  fun stopRuntimeService() {
+    NodeForegroundService.stop(getApplication())
+    runtimeServiceRunningState.value = false
+    clearRuntimeAutoStop()
+  }
+
+  fun refreshRuntimeServiceState() {
+    runtimeServiceRunningState.value = NodeForegroundService.isRunning()
+    if (!runtimeServiceRunningState.value) {
+      clearRuntimeAutoStop()
+    }
+  }
+
+  private fun clearRuntimeAutoStop() {
+    runtimeAutoStopJob?.cancel()
+    runtimeAutoStopJob = null
+    runtimeAutoStopAtMsState.value = null
+  }
+
   fun acceptGatewayTrustPrompt() {
     runtime.acceptGatewayTrustPrompt()
   }
 
   fun declineGatewayTrustPrompt() {
     runtime.declineGatewayTrustPrompt()
+  }
+
+  fun acceptActionConfirmationPrompt() {
+    runtime.acceptActionConfirmationPrompt()
+  }
+
+  fun declineActionConfirmationPrompt() {
+    runtime.declineActionConfirmationPrompt()
   }
 
   fun handleCanvasA2UIActionFromWebView(payloadJson: String) {
@@ -201,5 +262,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
   fun sendChat(message: String, thinking: String, attachments: List<OutgoingAttachment>) {
     runtime.sendChat(message = message, thinking = thinking, attachments = attachments)
+  }
+
+  override fun onCleared() {
+    clearRuntimeAutoStop()
+    super.onCleared()
   }
 }

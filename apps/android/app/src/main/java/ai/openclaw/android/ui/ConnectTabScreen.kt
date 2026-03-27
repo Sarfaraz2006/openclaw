@@ -64,6 +64,8 @@ fun ConnectTabScreen(viewModel: MainViewModel) {
   val manualEnabled by viewModel.manualEnabled.collectAsState()
   val gatewayToken by viewModel.gatewayToken.collectAsState()
   val pendingTrust by viewModel.pendingGatewayTrust.collectAsState()
+  val runtimeEnabled by viewModel.runtimeServiceRunning.collectAsState()
+  val runtimeAutoStopAtMs by viewModel.runtimeAutoStopAtMs.collectAsState()
 
   var advancedOpen by rememberSaveable { mutableStateOf(false) }
   var inputMode by
@@ -158,6 +160,59 @@ fun ConnectTabScreen(viewModel: MainViewModel) {
       Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("Gateway state", style = mobileCaption1.copy(fontWeight = FontWeight.SemiBold), color = mobileTextSecondary)
         Text(statusText, style = mobileBody, color = mobileText)
+      }
+    }
+
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(14.dp),
+      color = mobileSurface,
+      border = BorderStroke(1.dp, mobileBorder),
+    ) {
+      Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Runtime", style = mobileCaption1.copy(fontWeight = FontWeight.SemiBold), color = mobileTextSecondary)
+        Text(
+          if (runtimeEnabled) "On-demand runtime is running." else "Runtime is off by default.",
+          style = mobileBody,
+          color = mobileText,
+        )
+        if (runtimeAutoStopAtMs != null) {
+          val remainingMs = (runtimeAutoStopAtMs!! - System.currentTimeMillis()).coerceAtLeast(0L)
+          val remainingMin = (remainingMs + 59_999L) / 60_000L
+          Text("Auto-stop in ${remainingMin} min", style = mobileCaption1, color = mobileTextSecondary)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Button(
+            onClick = {
+              viewModel.startRuntimeService()
+            },
+            enabled = !runtimeEnabled,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(10.dp),
+          ) {
+            Text("Start runtime", style = mobileCallout.copy(fontWeight = FontWeight.SemiBold))
+          }
+          Button(
+            onClick = {
+              viewModel.startRuntimeServiceForMinutes(30)
+            },
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(10.dp),
+          ) {
+            Text("Run 30 min", style = mobileCallout.copy(fontWeight = FontWeight.SemiBold))
+          }
+          Button(
+            onClick = {
+              viewModel.stopRuntimeService()
+            },
+            enabled = runtimeEnabled,
+            colors = ButtonDefaults.buttonColors(containerColor = mobileDanger, contentColor = Color.White),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(10.dp),
+          ) {
+            Text("Stop runtime", style = mobileCallout.copy(fontWeight = FontWeight.SemiBold))
+          }
+        }
       }
     }
 

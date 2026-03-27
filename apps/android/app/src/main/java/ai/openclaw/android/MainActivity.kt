@@ -51,13 +51,12 @@ class MainActivity : ComponentActivity() {
       }
     }
 
-    // Keep startup path lean: start foreground service after first frame.
-    window.decorView.post { NodeForegroundService.start(this) }
   }
 
   override fun onStart() {
     super.onStart()
     viewModel.setForeground(true)
+    viewModel.refreshRuntimeServiceState()
   }
 
   override fun onStop() {
